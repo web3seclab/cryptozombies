@@ -19,6 +19,12 @@ contract KittyInterface {
 }
 
 contract ZombieFeeding is ZombieFactory {
+    // 给别的函数用的
+    modifier ownerOf(uint _zombieId) {
+        require(msg.sender == zombieToOwner[_zombieId]);
+        _;
+    }
+
     KittyInterface kittyContract;
     // ZombieFeeding 继承了 ZombieFactory，而 ZombieFactory 继承了 Ownable
     // Ownable 有个用 modifier 修饰的 onlyOwner
@@ -35,7 +41,7 @@ contract ZombieFeeding is ZombieFactory {
         return (_zombie.readyTime <= now);
     }
 
-    function feedAndMultiply(uint _zombieId, uint _targetDna, string species) public {
+    function feedAndMultiply(uint _zombieId, uint _targetDna, string species) internal ownerOf(_zombieId) {
         require(msg.sender == zombieToOwner[_zombieId]);
         Zombie storage myZombie = zombies[_zombieId];
         require(_isReady(myZombie));
