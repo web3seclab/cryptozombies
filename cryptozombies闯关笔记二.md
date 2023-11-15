@@ -162,3 +162,181 @@ ERC-721（Ethereum Request for Comments 721），由 William Entriken、Dieter S
 它提供了一些功能，例如将代币从一个帐户转移到另一个帐户，获取帐户的当前代币余额，获取代币的所有者，以及整个网络的可用代币总供应量。 除此之外，它还具有其他功能，例如批准帐户中一定数量的代币可以被第三方帐户转移。
 
 如果一个智能合约实现了下列方法和事件，它就可以被称为 ERC-721 非同质化代币合约。 一旦被部署，它将负责跟踪在以太坊上创建的代币。
+
+
+
+
+
+# 第4章: 重构
+
+嘿嘿！我们刚刚的代码中其实有个错误，以至于其根本无法通过编译，你发现了没？
+
+在前一个章节我们定义了一个叫 `ownerOf` 的函数。但如果你还记得第4课的内容，我们同样在`zombiefeeding.sol` 里以 `ownerOf` 命名创建了一个 `modifier`（修饰符）。
+
+如果你尝试编译这段代码，编译器会给你一个错误说你`不能有相同名称的修饰符和函数`。
+
+所以我们应该把在 `ZombieOwnership` 里的函数名称改成别的吗？
+
+不，我们不能那样做！！！要记得，我们正在用 ERC721 代币标准，意味着`其他合约将期望我们的合约以这些确切的名称来定义函数`。这就是这些标准实用的原因——如果另一个合约知道我们的合约符合 ERC721 标准，它可以直接与我们交互，而无需了解任何关于我们内部如何实现的细节。
+
+所以，那意味着我们将必须重构我们第4课中的代码，将 `modifier` 的名称换成别的。
+
+# 第5章: ERC721: 转移标准
+
+好了，我们将冲突修复了！
+
+现在我们将通过学习把所有权从一个人转移给另一个人来继续我们的 ERC721 规范的实现。
+
+注意 ERC721 规范有两种不同的方法来转移代币：
+
+```solidity
+// 第一种
+function transfer(address _to, uint256 _tokenId) public;
+
+// 第二种
+function approve(address _to, uint256 _tokenId) public;
+function takeOwnership(uint256 _tokenId) public;
+```
+
+1. 第一种方法是代币的拥有者调用`transfer` 方法，传入他想转移到的 `address` 和他想转移的代币的 `_tokenId`。
+2. 第二种方法是代币拥有者首先调用 `approve`，然后传入与以上相同的参数。接着，该合约会存储谁被允许提取代币，通常存储到一个 `mapping (uint256 => address)` 里。然后，当有人调用 `takeOwnership` 时，合约会检查 `msg.sender` 是否得到拥有者的批准来提取代币，如果是，则将代币转移给他。
+
+你注意到了吗，`transfer` 和 `takeOwnership` 都将包含相同的转移逻辑，只是以相反的顺序。 （一种情况是代币的发送者调用函数；另一种情况是代币的接收者调用它）。
+
+所以我们把这个逻辑抽象成它自己的私有函数 `_transfer`，然后由这两个函数来调用它。 这样我们就不用写重复的代码了。
+
+
+
+
+
+### 合约安全增强: 溢出和下溢
+
+我们将来学习你在编写智能合约的时候需要注意的一个主要的安全特性：防止溢出和下溢。
+
+什么是 **_溢出_** (***overflow\***)?
+
+假设我们有一个 `uint8`, 只能存储8 bit数据。这意味着我们能存储的最大数字就是二进制 `11111111` (或者说十进制的 2^8 - 1 = 255).
+
+来看看下面的代码。最后 `number` 将会是什么值？
+
+```
+uint8 number = 255;
+number++;
+```
+
+在这个例子中，我们导致了溢出 — 虽然我们加了1， 但是 `number` 出乎意料地等于 `0`了。 (如果你给二进制 `11111111` 加1, 它将被重置为 `00000000`，就像钟表从 `23:59` 走向 `00:00`)。
+
+下溢(`underflow`)也类似，如果你从一个等于 `0` 的 `uint8` 减去 `1`, 它将变成 `255` (因为 `uint` 是无符号的，其不能等于负数)。
+
+虽然我们在这里不使用 `uint8`，而且每次给一个 `uint256` 加 `1` 也不太可能溢出 (2^256 真的是一个很大的数了)，在我们的合约中添加一些保护机制依然是非常有必要的，以防我们的 DApp 以后出现什么异常情况。
+
+
+
+### 使用 SafeMath
+
+为了防止这些情况，OpenZeppelin 建立了一个叫做 SafeMath 的 **_库_**(***library\***)，默认情况下可以防止这些问题。
+
+不过在我们使用之前…… 什么叫做库?
+
+一个**_库_** 是 Solidity 中一种特殊的合约。其中一个有用的功能是给原始数据类型增加一些方法。
+
+比如，使用 SafeMath 库的时候，我们将使用 `using SafeMath for uint256` 这样的语法。 SafeMath 库有四个方法 — `add`， `sub`， `mul`， 以及 `div`。现在我们可以这样来让 `uint256` 调用这些方法：
+
+```
+using SafeMath for uint256;
+
+uint256 a = 5;
+uint256 b = a.add(3); // 5 + 3 = 8
+uint256 c = a.mul(2); // 5 * 2 = 10
+```
+
+我们将在下一章来学习这些方法，不过现在我们先将 SafeMath 库添加进我们的合约。
+
+
+
+
+
+# 第10章: SafeMath 第二部分
+
+来看看 SafeMath 的部分代码:
+
+```solidity
+library SafeMath {
+	// 乘法
+  function mul(uint256 a, uint256 b) internal pure returns (uint256) {
+    if (a == 0) {
+      return 0;
+    }
+    uint256 c = a * b;
+    assert(c / a == b);
+    return c;
+  }
+
+	// 除法
+  function div(uint256 a, uint256 b) internal pure returns (uint256) {
+    // assert(b > 0); // Solidity automatically throws when dividing by 0
+    uint256 c = a / b;
+    // assert(a == b * c + a % b); // There is no case in which this doesn't hold
+    return c;
+  }
+
+	// 减法
+  function sub(uint256 a, uint256 b) internal pure returns (uint256) {
+    assert(b <= a);
+    return a - b;
+  }
+
+	// 加法
+  function add(uint256 a, uint256 b) internal pure returns (uint256) {
+    uint256 c = a + b;
+    assert(c >= a);
+    return c;
+  }
+}
+```
+
+首先我们有了 `library` 关键字 — 库和 `合约`很相似，但是又有一些不同。 就我们的目的而言，库允许我们使用 `using` 关键字，它可以自动把库的所有方法添加给一个数据类型：
+
+```solidity
+using SafeMath for uint;
+// 这下我们可以为任何 uint 调用这些方法了
+uint test = 2;
+test = test.mul(3); // test 等于 6 了
+test = test.add(5); // test 等于 11 了
+```
+
+注意 `mul` 和 `add` 其实都需要两个参数。 在我们声明了 `using SafeMath for uint` 后，我们用来调用这些方法的 `uint` 就自动被作为第一个参数传递进去了(在此例中就是 `test`)
+
+我们来看看 `add` 的源代码看 SafeMath 做了什么:
+
+```solidity
+function add(uint256 a, uint256 b) internal pure returns (uint256) {
+  uint256 c = a + b;
+  assert(c >= a);
+  return c;
+}
+```
+
+基本上 `add` 只是像 `+` 一样对两个 `uint` 相加， 但是它用一个 `assert` 语句来确保结果大于 `a`。这样就防止了溢出。
+
+`assert` 和 `require` 相似，若结果为否它就会抛出错误。
+
+ `assert` 和 `require` 区别在于，`require` 若失败则会返还给用户剩下的 gas， `assert` 则不会。所以大部分情况下，你写代码的时候会比较喜欢 `require`，`assert` 只在代码可能出现严重错误的时候使用，比如 `uint` 溢出。
+
+所以简而言之， SafeMath 的 `add`， `sub`， `mul`， 和 `div` 方法只做简单的四则运算，然后在发生溢出或下溢的时候抛出错误。
+
+### 在我们的代码里使用 SafeMath。
+
+为了防止溢出和下溢，我们可以在我们的代码里找 `+`， `-`， `*`， 或 `/`，然后替换为 `add`, `sub`, `mul`, `div`.
+
+比如，与其这样做:
+
+```solidity
+myUint++;
+```
+
+我们这样做：
+
+```solidity
+myUint = myUint.add(1);
+```
