@@ -340,3 +340,30 @@ myUint++;
 ```solidity
 myUint = myUint.add(1);
 ```
+
+
+
+
+
+我们同样应该在这些地方防止溢出。（通常情况下，总是使用 SafeMath 而不是普通数学运算是个好主意，也许在以后 Solidity 的新版本里这点会被默认实现，但是现在我们得自己在代码里实现这些额外的安全措施）。
+
+不过我们遇到个小问题 — `winCount` 和 `lossCount` 是 `uint16`， 而 `level` 是 `uint32`。 所以如果我们用这些作为参数传入 SafeMath 的 `add` 方法。 它实际上并不会防止溢出，因为它会把这些变量都转换成 `uint256`:
+
+```solidity
+function add(uint256 a, uint256 b) internal pure returns (uint256) {
+  uint256 c = a + b;
+  assert(c >= a);
+  return c;
+}
+
+// 如果我们在`uint8` 上调用 `.add`。它将会被转换成 `uint256`.
+// 所以它不会在 2^8 时溢出，因为 256 是一个有效的 `uint256`.
+```
+
+这就意味着，我们需要再实现两个库来防止 `uint16` 和 `uint32` 溢出或下溢。我们可以将其命名为 `SafeMath16` 和 `SafeMath32`。
+
+代码将和 SafeMath 完全相同，除了所有的 `uint256` 实例都将被替换成 `uint32` 或 `uint16`。
+
+我们已经将这些代码帮你写好了，打开 `safemath.sol` 合约看看代码吧。
+
+现在我们需要在 ZombieFactory 里使用它们。
